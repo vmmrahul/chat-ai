@@ -92,8 +92,8 @@ function processTXT(filePath) {
 }
 
 // POST /api/chat - Main chat endpoint
-router.post('/', upload.single('file'), async (req, res) => {
-  let uploadedFilePath = null;
+router.post('/', upload.array('file'), async (req, res) => {
+  let uploadedFilePaths = [];
 
   try {
     // Extract request data

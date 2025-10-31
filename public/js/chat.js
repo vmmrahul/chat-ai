@@ -102,60 +102,133 @@ function saveConversationHistory() {
 
 // Handle file selection
 function handleFileSelection(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
 
-  // Validate file size
-  if (file.size > MAX_FILE_SIZE) {
-    showError('File size must be under 5MB');
-    fileInput.value = '';
-    return;
-  }
-
-  // Validate file type
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.txt', '.docx'];
-  const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+  let validFilesAdded = false;
 
-  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
-    showError('File type not supported. Allowed: jpg, png, gif, webp, pdf, txt, docx');
-    fileInput.value = '';
-    return;
+  // Process each selected file
+  Array.from(files).forEach(file => {
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      showError(`${file.name} exceeds 5MB limit. Skipped.`);
+      return;
+    }
+
+    // Validate file type
+    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+    if (!allowedExtensions.includes(fileExtension)) {
+      showError(`${file.name} not supported. Skipped.`);
+      return;
+    }
+
+    // Create file metadata object
+    const fileMetadata = {
+      id: Date.now() + Math.random(), // Unique ID for removal
+      file: file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isImage: file.type.startsWith('image/')
+    };
+
+    selectedFiles.push(fileMetadata);
+    validFilesAdded = true;
+  });
+
+  // Update preview if any valid files were added
+  if (validFilesAdded) {
+    updateFilePreview();
   }
 
-  selectedFile = file;
-  showFilePreview(file);
+  // Don't clear file input on success - user can add more files
 }
 
-// Show file preview
-function showFilePreview(file) {
-  fileName.textContent = file.name;
-  fileSize.textContent = formatFileSize(file.size);
+// Get file icon based on file type
+function getFileIcon(fileMetadata) {
+  const ext = '.' + fileMetadata.name.split('.').pop().toLowerCase();
 
-  // Show thumbnail for images
-  if (file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      fileThumbnail.src = e.target.result;
-      fileThumbnail.style.display = 'block';
-    };
-    reader.onerror = () => {
-      fileThumbnail.style.display = 'none';
-    };
-    reader.readAsDataURL(file);
+  if (fileMetadata.isImage) {
+    return '🖼️';
+  } else if (ext === '.pdf') {
+    return '📕';
+  } else if (ext === '.docx') {
+    return '📘';
+  } else if (ext === '.txt') {
+    return '📄';
+  }
+  return '📎';
+}
+
+// Update file preview list
+function updateFilePreview() {
+  // Update count display
+  filesCountDisplay.textContent = `Files Selected (${selectedFiles.length})`;
+
+  // Clear file list
+  filesList.innerHTML = '';
+
+  // Add each file as a list item
+  selectedFiles.forEach(fileMetadata => {
+    const fileItem = document.createElement('div');
+    fileItem.classList.add('file-item');
+    fileItem.setAttribute('data-file-id', fileMetadata.id);
+
+    // File icon
+    const icon = document.createElement('div');
+    icon.classList.add('file-icon');
+    icon.textContent = getFileIcon(fileMetadata);
+
+    // File info
+    const info = document.createElement('div');
+    info.classList.add('file-info');
+
+    const nameDiv = document.createElement('div');
+    nameDiv.classList.add('file-name');
+    nameDiv.textContent = fileMetadata.name;
+
+    const sizeDiv = document.createElement('div');
+    sizeDiv.classList.add('file-size');
+    sizeDiv.textContent = formatFileSize(fileMetadata.size);
+
+    info.appendChild(nameDiv);
+    info.appendChild(sizeDiv);
+
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.classList.add('btn-remove');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      handleRemoveFileById(fileMetadata.id);
+    });
+
+    fileItem.appendChild(icon);
+    fileItem.appendChild(info);
+    fileItem.appendChild(removeBtn);
+
+    filesList.appendChild(fileItem);
+  });
+
+  // Show or hide preview container
+  if (selectedFiles.length > 0) {
+    filePreview.style.display = 'flex';
   } else {
-    fileThumbnail.style.display = 'none';
+    filePreview.style.display = 'none';
   }
-
-  filePreview.style.display = 'flex';
 }
 
-// Remove file
-function handleRemoveFile() {
-  selectedFile = null;
+// Remove file by ID
+function handleRemoveFileById(fileId) {
+  selectedFiles = selectedFiles.filter(f => f.id !== fileId);
+  updateFilePreview();
+}
+
+// Clear all files
+function handleClearAllFiles() {
+  selectedFiles = [];
   fileInput.value = '';
-  filePreview.style.display = 'none';
-  fileThumbnail.style.display = 'none';
+  updateFilePreview();
 }
 
 // Handle send message

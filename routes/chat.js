@@ -98,7 +98,6 @@ router.post('/', upload.array('file'), async (req, res) => {
   try {
     // Extract request data
     const message = req.body.message ? req.body.message.trim() : '';
-    const file = req.file;
     let conversationHistory = [];
 
     // Parse conversation history

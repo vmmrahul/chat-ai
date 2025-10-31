@@ -33,16 +33,15 @@
     <!-- Input Area -->
     <div class="input-area">
       <!-- Hidden File Input -->
-      <input type="file" id="fileInput" accept="image/*,application/pdf,text/*,.docx" style="display: none;">
+      <input type="file" id="fileInput" accept="image/*,application/pdf,text/*,.docx" multiple style="display: none;">
 
-      <!-- File Preview -->
+      <!-- File Preview for Multiple Files -->
       <div id="filePreview" class="file-preview" style="display: none;">
-        <div class="file-info">
-          <span id="fileName"></span>
-          <span id="fileSize"></span>
+        <div class="files-header">
+          <span id="filesCountDisplay">Files Selected (0)</span>
+          <button id="clearFilesBtn" class="btn-clear-all">Clear All</button>
         </div>
-        <img id="fileThumbnail" class="file-thumbnail" style="display: none;">
-        <button id="removeFileBtn" class="btn-remove">×</button>
+        <div id="filesList" class="files-list"></div>
       </div>
 
       <!-- Input Controls -->

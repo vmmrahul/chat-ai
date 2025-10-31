@@ -92,13 +92,12 @@ function processTXT(filePath) {
 }
 
 // POST /api/chat - Main chat endpoint
-router.post('/', upload.single('file'), async (req, res) => {
-  let uploadedFilePath = null;
+router.post('/', upload.array('file'), async (req, res) => {
+  let uploadedFilePaths = [];
 
   try {
     // Extract request data
     const message = req.body.message ? req.body.message.trim() : '';
-    const file = req.file;
     let conversationHistory = [];
 
     // Parse conversation history
@@ -115,8 +114,8 @@ router.post('/', upload.single('file'), async (req, res) => {
       }
     }
 
-    // Validate: at least one of message or file must be provided
-    if (!message && !file) {
+    // Validate: at least one of message or files must be provided
+    if (!message && (!req.files || req.files.length === 0)) {
       return res.status(400).json({
         success: false,
         error: 'Please provide a message or file'
@@ -131,66 +130,89 @@ router.post('/', upload.single('file'), async (req, res) => {
       });
     }
 
-    // Validate file if provided
-    if (file) {
-      uploadedFilePath = file.path;
+    // Validate and collect files if provided
+    const validatedFiles = [];
+    const skippedFiles = [];
 
-      // Check file size (multer should handle this, but double-check)
-      if (file.size > 5 * 1024 * 1024) {
-        return res.status(400).json({
-          success: false,
-          error: 'File size exceeds 5MB limit'
-        });
-      }
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        // Check file size (multer should handle this, but double-check)
+        if (file.size > 5 * 1024 * 1024) {
+          skippedFiles.push(`${file.originalname} exceeds 5MB limit`);
+          continue;
+        }
 
-      // Validate file type
-      if (!validateFileType(file.originalname)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Unsupported file type. Allowed: jpg, png, gif, webp, pdf, txt, docx'
-        });
+        // Validate file type
+        if (!validateFileType(file.originalname)) {
+          skippedFiles.push(`${file.originalname} is unsupported type`);
+          continue;
+        }
+
+        // Valid file - add to collection
+        validatedFiles.push(file);
+        uploadedFilePaths.push(file.path);
       }
+    }
+
+    // If files were provided but all failed validation, return error
+    if (req.files && req.files.length > 0 && validatedFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: `All files failed validation. Reasons: ${skippedFiles.join(', ')}`
+      });
     }
 
     // Build OpenAI messages array
     let messages = [...conversationHistory];
 
-    // Process file and build user message
-    if (file) {
-      if (isImageFile(file.originalname)) {
-        // Image file - use vision API
-        const imageDataUrl = await processImage(uploadedFilePath, file.originalname);
+    // Process files and build user message
+    if (validatedFiles.length > 0) {
+      // Separate files into images and documents
+      const imageFiles = validatedFiles.filter(f => isImageFile(f.originalname));
+      const documentFiles = validatedFiles.filter(f => isDocumentFile(f.originalname));
 
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: message || 'What do you see in this image?' },
-            { type: 'image_url', image_url: { url: imageDataUrl } }
-          ]
-        });
-      } else if (isDocumentFile(file.originalname)) {
-        // Document file - extract text
-        let extractedText = '';
-        const ext = path.extname(file.originalname).toLowerCase();
+      // Create composite message content
+      const content = [];
 
-        if (ext === '.pdf') {
-          extractedText = await processPDF(uploadedFilePath);
-        } else if (ext === '.docx') {
-          extractedText = await processDOCX(uploadedFilePath);
-        } else if (ext === '.txt') {
-          extractedText = processTXT(uploadedFilePath);
+      // Add user message text
+      if (message) {
+        content.push({ type: 'text', text: message });
+      } else if (validatedFiles.length > 0) {
+        content.push({ type: 'text', text: 'Please analyze these files:' });
+      }
+
+      // Process all image files
+      for (const imageFile of imageFiles) {
+        const imageDataUrl = await processImage(imageFile.path, imageFile.originalname);
+        content.push({ type: 'image_url', image_url: { url: imageDataUrl } });
+      }
+
+      // Process all document files
+      if (documentFiles.length > 0) {
+        let allDocText = 'Document content:\n';
+
+        for (const docFile of documentFiles) {
+          let extractedText = '';
+          const ext = path.extname(docFile.originalname).toLowerCase();
+
+          if (ext === '.pdf') {
+            extractedText = await processPDF(docFile.path);
+          } else if (ext === '.docx') {
+            extractedText = await processDOCX(docFile.path);
+          } else if (ext === '.txt') {
+            extractedText = processTXT(docFile.path);
+          }
+
+          allDocText += `${docFile.originalname}: ${extractedText}\n`;
         }
 
-        // Combine message with document content
-        const userContent = message
-          ? `${message}\n\nDocument content:\n${extractedText}`
-          : `Please analyze this document:\n\n${extractedText}`;
-
-        messages.push({
-          role: 'user',
-          content: userContent
-        });
+        content.push({ type: 'text', text: allDocText });
       }
+
+      messages.push({
+        role: 'user',
+        content: content
+      });
     } else {
       // Text-only message
       messages.push({
@@ -209,13 +231,15 @@ router.post('/', upload.single('file'), async (req, res) => {
 
       const aiResponse = completion.choices[0].message.content;
 
-      // Clean up uploaded file
-      if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-        try {
-          fs.unlinkSync(uploadedFilePath);
-        } catch (error) {
-          console.error('Failed to delete uploaded file:', error);
-          // Don't fail the request if file deletion fails
+      // Clean up uploaded files
+      for (const filePath of uploadedFilePaths) {
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (error) {
+            console.error('Failed to delete uploaded file:', error);
+            // Don't fail the request if file deletion fails
+          }
         }
       }
 
@@ -230,12 +254,14 @@ router.post('/', upload.single('file'), async (req, res) => {
       // Handle OpenAI API errors
       console.error('OpenAI API error:', apiError);
 
-      // Clean up uploaded file
-      if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-        try {
-          fs.unlinkSync(uploadedFilePath);
-        } catch (error) {
-          console.error('Failed to delete uploaded file:', error);
+      // Clean up uploaded files
+      for (const filePath of uploadedFilePaths) {
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (error) {
+            console.error('Failed to delete uploaded file:', error);
+          }
         }
       }
 
@@ -270,12 +296,14 @@ router.post('/', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('Request processing error:', error);
 
-    // Clean up uploaded file if exists
-    if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-      try {
-        fs.unlinkSync(uploadedFilePath);
-      } catch (delError) {
-        console.error('Failed to delete uploaded file:', delError);
+    // Clean up uploaded files if exist
+    for (const filePath of uploadedFilePaths) {
+      if (filePath && fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (delError) {
+          console.error('Failed to delete uploaded file:', delError);
+        }
       }
     }
 

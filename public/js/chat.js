@@ -7,17 +7,16 @@ const sendButton = document.getElementById('sendButton');
 const fileInput = document.getElementById('fileInput');
 const attachFileBtn = document.getElementById('attachFileBtn');
 const filePreview = document.getElementById('filePreview');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const fileThumbnail = document.getElementById('fileThumbnail');
-const removeFileBtn = document.getElementById('removeFileBtn');
+const filesCountDisplay = document.getElementById('filesCountDisplay');
+const filesList = document.getElementById('filesList');
+const clearFilesBtn = document.getElementById('clearFilesBtn');
 const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const errorMessage = document.getElementById('errorMessage');
 
 // State
 let conversationHistory = [];
-let selectedFile = null;
+let selectedFiles = [];
 let isSending = false;
 
 // Constants
@@ -53,7 +52,7 @@ function setupEventListeners() {
   });
 
   fileInput.addEventListener('change', handleFileSelection);
-  removeFileBtn.addEventListener('click', handleRemoveFile);
+  clearFilesBtn.addEventListener('click', handleClearAllFiles);
   clearHistoryBtn.addEventListener('click', handleClearHistory);
 }
 
@@ -64,9 +63,10 @@ function loadConversationHistory() {
     if (stored) {
       conversationHistory = JSON.parse(stored);
 
-      // Render all messages
+      // Render all messages (handle both old fileName and new fileNames formats)
       conversationHistory.forEach(msg => {
-        renderMessage(msg.role, msg.content, msg.fileName);
+        const fileNames = msg.fileNames || (msg.fileName ? [msg.fileName] : null);
+        renderMessage(msg.role, msg.content, fileNames);
       });
 
       scrollToBottom();
@@ -102,60 +102,133 @@ function saveConversationHistory() {
 
 // Handle file selection
 function handleFileSelection(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
 
-  // Validate file size
-  if (file.size > MAX_FILE_SIZE) {
-    showError('File size must be under 5MB');
-    fileInput.value = '';
-    return;
-  }
-
-  // Validate file type
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.txt', '.docx'];
-  const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+  let validFilesAdded = false;
 
-  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
-    showError('File type not supported. Allowed: jpg, png, gif, webp, pdf, txt, docx');
-    fileInput.value = '';
-    return;
+  // Process each selected file
+  Array.from(files).forEach(file => {
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      showError(`${file.name} exceeds 5MB limit. Skipped.`);
+      return;
+    }
+
+    // Validate file type
+    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+    if (!allowedExtensions.includes(fileExtension)) {
+      showError(`${file.name} not supported. Skipped.`);
+      return;
+    }
+
+    // Create file metadata object
+    const fileMetadata = {
+      id: Date.now() + Math.random(), // Unique ID for removal
+      file: file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isImage: file.type.startsWith('image/')
+    };
+
+    selectedFiles.push(fileMetadata);
+    validFilesAdded = true;
+  });
+
+  // Update preview if any valid files were added
+  if (validFilesAdded) {
+    updateFilePreview();
   }
 
-  selectedFile = file;
-  showFilePreview(file);
+  // Don't clear file input on success - user can add more files
 }
 
-// Show file preview
-function showFilePreview(file) {
-  fileName.textContent = file.name;
-  fileSize.textContent = formatFileSize(file.size);
+// Get file icon based on file type
+function getFileIcon(fileMetadata) {
+  const ext = '.' + fileMetadata.name.split('.').pop().toLowerCase();
 
-  // Show thumbnail for images
-  if (file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      fileThumbnail.src = e.target.result;
-      fileThumbnail.style.display = 'block';
-    };
-    reader.onerror = () => {
-      fileThumbnail.style.display = 'none';
-    };
-    reader.readAsDataURL(file);
+  if (fileMetadata.isImage) {
+    return '🖼️';
+  } else if (ext === '.pdf') {
+    return '📕';
+  } else if (ext === '.docx') {
+    return '📘';
+  } else if (ext === '.txt') {
+    return '📄';
+  }
+  return '📎';
+}
+
+// Update file preview list
+function updateFilePreview() {
+  // Update count display
+  filesCountDisplay.textContent = `Files Selected (${selectedFiles.length})`;
+
+  // Clear file list
+  filesList.innerHTML = '';
+
+  // Add each file as a list item
+  selectedFiles.forEach(fileMetadata => {
+    const fileItem = document.createElement('div');
+    fileItem.classList.add('file-item');
+    fileItem.setAttribute('data-file-id', fileMetadata.id);
+
+    // File icon
+    const icon = document.createElement('div');
+    icon.classList.add('file-icon');
+    icon.textContent = getFileIcon(fileMetadata);
+
+    // File info
+    const info = document.createElement('div');
+    info.classList.add('file-info');
+
+    const nameDiv = document.createElement('div');
+    nameDiv.classList.add('file-name');
+    nameDiv.textContent = fileMetadata.name;
+
+    const sizeDiv = document.createElement('div');
+    sizeDiv.classList.add('file-size');
+    sizeDiv.textContent = formatFileSize(fileMetadata.size);
+
+    info.appendChild(nameDiv);
+    info.appendChild(sizeDiv);
+
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.classList.add('btn-remove');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      handleRemoveFileById(fileMetadata.id);
+    });
+
+    fileItem.appendChild(icon);
+    fileItem.appendChild(info);
+    fileItem.appendChild(removeBtn);
+
+    filesList.appendChild(fileItem);
+  });
+
+  // Show or hide preview container
+  if (selectedFiles.length > 0) {
+    filePreview.style.display = 'flex';
   } else {
-    fileThumbnail.style.display = 'none';
+    filePreview.style.display = 'none';
   }
-
-  filePreview.style.display = 'flex';
 }
 
-// Remove file
-function handleRemoveFile() {
-  selectedFile = null;
+// Remove file by ID
+function handleRemoveFileById(fileId) {
+  selectedFiles = selectedFiles.filter(f => f.id !== fileId);
+  updateFilePreview();
+}
+
+// Clear all files
+function handleClearAllFiles() {
+  selectedFiles = [];
   fileInput.value = '';
-  filePreview.style.display = 'none';
-  fileThumbnail.style.display = 'none';
+  updateFilePreview();
 }
 
 // Handle send message
@@ -164,8 +237,8 @@ async function handleSendMessage() {
 
   const message = messageInput.value.trim();
 
-  // Validate: message or file must be provided
-  if (!message && !selectedFile) {
+  // Validate: message or files must be provided
+  if (!message && selectedFiles.length === 0) {
     showError('Please enter a message or attach a file');
     return;
   }
@@ -175,24 +248,26 @@ async function handleSendMessage() {
   sendButton.disabled = true;
   sendButton.textContent = 'Sending...';
 
+  // Copy files array before clearing
+  const filesToSend = [...selectedFiles];
+
   // Create user message object
   const userMessage = {
     role: 'user',
     content: message,
     timestamp: Date.now(),
-    fileName: selectedFile ? selectedFile.name : null
+    fileNames: filesToSend.length > 0 ? filesToSend.map(f => f.name) : null
   };
 
   // Add to history and render
   conversationHistory.push(userMessage);
-  renderMessage('user', message, userMessage.fileName);
+  renderMessage('user', message, userMessage.fileNames);
   saveConversationHistory();
 
   // Clear inputs
   messageInput.value = '';
   messageInput.style.height = 'auto';
-  const fileToSend = selectedFile;
-  handleRemoveFile();
+  handleClearAllFiles();
 
   // Show typing indicator
   typingIndicator.style.display = 'flex';
@@ -202,9 +277,11 @@ async function handleSendMessage() {
     // Prepare FormData
     const formData = new FormData();
     formData.append('message', message);
-    if (fileToSend) {
-      formData.append('file', fileToSend);
-    }
+
+    // Append all files
+    filesToSend.forEach((fileMetadata) => {
+      formData.append('file', fileMetadata.file);
+    });
 
     // Prepare conversation history for API (only content and role, last 10 messages)
     const historyForAPI = conversationHistory
@@ -271,12 +348,22 @@ function renderMessage(role, content, fileNameStr = null) {
   if (role === 'user') {
     messageDiv.classList.add('user-message');
 
-    // Show file indicator if file was attached
+    // Show file indicators if files were attached
     if (fileNameStr) {
-      const fileIndicator = document.createElement('div');
-      fileIndicator.classList.add('message-file-indicator');
-      fileIndicator.textContent = `📎 ${fileNameStr}`;
-      messageDiv.appendChild(fileIndicator);
+      const filesIndicator = document.createElement('div');
+      filesIndicator.classList.add('message-files-indicator');
+
+      // Handle both string (old format) and array (new format) for compatibility
+      const fileNames = Array.isArray(fileNameStr) ? fileNameStr : [fileNameStr];
+
+      fileNames.forEach(name => {
+        const indicator = document.createElement('div');
+        indicator.classList.add('message-file-badge');
+        indicator.textContent = `📎 ${name}`;
+        filesIndicator.appendChild(indicator);
+      });
+
+      messageDiv.appendChild(filesIndicator);
     }
 
     // Add message content (only if not empty)

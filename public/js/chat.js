@@ -7,17 +7,16 @@ const sendButton = document.getElementById('sendButton');
 const fileInput = document.getElementById('fileInput');
 const attachFileBtn = document.getElementById('attachFileBtn');
 const filePreview = document.getElementById('filePreview');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const fileThumbnail = document.getElementById('fileThumbnail');
-const removeFileBtn = document.getElementById('removeFileBtn');
+const filesCountDisplay = document.getElementById('filesCountDisplay');
+const filesList = document.getElementById('filesList');
+const clearFilesBtn = document.getElementById('clearFilesBtn');
 const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const errorMessage = document.getElementById('errorMessage');
 
 // State
 let conversationHistory = [];
-let selectedFile = null;
+let selectedFiles = [];
 let isSending = false;
 
 // Constants

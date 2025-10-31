@@ -63,9 +63,10 @@ function loadConversationHistory() {
     if (stored) {
       conversationHistory = JSON.parse(stored);
 
-      // Render all messages
+      // Render all messages (handle both old fileName and new fileNames formats)
       conversationHistory.forEach(msg => {
-        renderMessage(msg.role, msg.content, msg.fileName);
+        const fileNames = msg.fileNames || (msg.fileName ? [msg.fileName] : null);
+        renderMessage(msg.role, msg.content, fileNames);
       });
 
       scrollToBottom();

@@ -237,8 +237,8 @@ async function handleSendMessage() {
 
   const message = messageInput.value.trim();
 
-  // Validate: message or file must be provided
-  if (!message && !selectedFile) {
+  // Validate: message or files must be provided
+  if (!message && selectedFiles.length === 0) {
     showError('Please enter a message or attach a file');
     return;
   }
@@ -248,24 +248,26 @@ async function handleSendMessage() {
   sendButton.disabled = true;
   sendButton.textContent = 'Sending...';
 
+  // Copy files array before clearing
+  const filesToSend = [...selectedFiles];
+
   // Create user message object
   const userMessage = {
     role: 'user',
     content: message,
     timestamp: Date.now(),
-    fileName: selectedFile ? selectedFile.name : null
+    fileNames: filesToSend.length > 0 ? filesToSend.map(f => f.name) : null
   };
 
   // Add to history and render
   conversationHistory.push(userMessage);
-  renderMessage('user', message, userMessage.fileName);
+  renderMessage('user', message, userMessage.fileNames);
   saveConversationHistory();
 
   // Clear inputs
   messageInput.value = '';
   messageInput.style.height = 'auto';
-  const fileToSend = selectedFile;
-  handleRemoveFile();
+  handleClearAllFiles();
 
   // Show typing indicator
   typingIndicator.style.display = 'flex';
@@ -275,9 +277,11 @@ async function handleSendMessage() {
     // Prepare FormData
     const formData = new FormData();
     formData.append('message', message);
-    if (fileToSend) {
-      formData.append('file', fileToSend);
-    }
+
+    // Append all files
+    filesToSend.forEach((fileMetadata) => {
+      formData.append('file', fileMetadata.file);
+    });
 
     // Prepare conversation history for API (only content and role, last 10 messages)
     const historyForAPI = conversationHistory

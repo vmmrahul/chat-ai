@@ -232,13 +232,15 @@ router.post('/', upload.array('file'), async (req, res) => {
 
       const aiResponse = completion.choices[0].message.content;
 
-      // Clean up uploaded file
-      if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-        try {
-          fs.unlinkSync(uploadedFilePath);
-        } catch (error) {
-          console.error('Failed to delete uploaded file:', error);
-          // Don't fail the request if file deletion fails
+      // Clean up uploaded files
+      for (const filePath of uploadedFilePaths) {
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (error) {
+            console.error('Failed to delete uploaded file:', error);
+            // Don't fail the request if file deletion fails
+          }
         }
       }
 

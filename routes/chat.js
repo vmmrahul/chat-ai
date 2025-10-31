@@ -255,12 +255,14 @@ router.post('/', upload.array('file'), async (req, res) => {
       // Handle OpenAI API errors
       console.error('OpenAI API error:', apiError);
 
-      // Clean up uploaded file
-      if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-        try {
-          fs.unlinkSync(uploadedFilePath);
-        } catch (error) {
-          console.error('Failed to delete uploaded file:', error);
+      // Clean up uploaded files
+      for (const filePath of uploadedFilePaths) {
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (error) {
+            console.error('Failed to delete uploaded file:', error);
+          }
         }
       }
 

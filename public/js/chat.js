@@ -52,7 +52,7 @@ function setupEventListeners() {
   });
 
   fileInput.addEventListener('change', handleFileSelection);
-  removeFileBtn.addEventListener('click', handleRemoveFile);
+  clearFilesBtn.addEventListener('click', handleClearAllFiles);
   clearHistoryBtn.addEventListener('click', handleClearHistory);
 }
 

@@ -348,12 +348,22 @@ function renderMessage(role, content, fileNameStr = null) {
   if (role === 'user') {
     messageDiv.classList.add('user-message');
 
-    // Show file indicator if file was attached
+    // Show file indicators if files were attached
     if (fileNameStr) {
-      const fileIndicator = document.createElement('div');
-      fileIndicator.classList.add('message-file-indicator');
-      fileIndicator.textContent = `📎 ${fileNameStr}`;
-      messageDiv.appendChild(fileIndicator);
+      const filesIndicator = document.createElement('div');
+      filesIndicator.classList.add('message-files-indicator');
+
+      // Handle both string (old format) and array (new format) for compatibility
+      const fileNames = Array.isArray(fileNameStr) ? fileNameStr : [fileNameStr];
+
+      fileNames.forEach(name => {
+        const indicator = document.createElement('div');
+        indicator.classList.add('message-file-badge');
+        indicator.textContent = `📎 ${name}`;
+        filesIndicator.appendChild(indicator);
+      });
+
+      messageDiv.appendChild(filesIndicator);
     }
 
     // Add message content (only if not empty)

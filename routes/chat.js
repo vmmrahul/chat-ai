@@ -297,12 +297,14 @@ router.post('/', upload.array('file'), async (req, res) => {
   } catch (error) {
     console.error('Request processing error:', error);
 
-    // Clean up uploaded file if exists
-    if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
-      try {
-        fs.unlinkSync(uploadedFilePath);
-      } catch (delError) {
-        console.error('Failed to delete uploaded file:', delError);
+    // Clean up uploaded files if exist
+    for (const filePath of uploadedFilePaths) {
+      if (filePath && fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (delError) {
+          console.error('Failed to delete uploaded file:', delError);
+        }
       }
     }
 

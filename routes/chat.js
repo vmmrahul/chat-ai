@@ -115,8 +115,8 @@ router.post('/', upload.array('file'), async (req, res) => {
       }
     }
 
-    // Validate: at least one of message or file must be provided
-    if (!message && !file) {
+    // Validate: at least one of message or files must be provided
+    if (!message && (!req.files || req.files.length === 0)) {
       return res.status(400).json({
         success: false,
         error: 'Please provide a message or file'
@@ -131,25 +131,36 @@ router.post('/', upload.array('file'), async (req, res) => {
       });
     }
 
-    // Validate file if provided
-    if (file) {
-      uploadedFilePath = file.path;
+    // Validate and collect files if provided
+    const validatedFiles = [];
+    const skippedFiles = [];
 
-      // Check file size (multer should handle this, but double-check)
-      if (file.size > 5 * 1024 * 1024) {
-        return res.status(400).json({
-          success: false,
-          error: 'File size exceeds 5MB limit'
-        });
-      }
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        // Check file size (multer should handle this, but double-check)
+        if (file.size > 5 * 1024 * 1024) {
+          skippedFiles.push(`${file.originalname} exceeds 5MB limit`);
+          continue;
+        }
 
-      // Validate file type
-      if (!validateFileType(file.originalname)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Unsupported file type. Allowed: jpg, png, gif, webp, pdf, txt, docx'
-        });
+        // Validate file type
+        if (!validateFileType(file.originalname)) {
+          skippedFiles.push(`${file.originalname} is unsupported type`);
+          continue;
+        }
+
+        // Valid file - add to collection
+        validatedFiles.push(file);
+        uploadedFilePaths.push(file.path);
       }
+    }
+
+    // If files were provided but all failed validation, return error
+    if (req.files && req.files.length > 0 && validatedFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: `All files failed validation. Reasons: ${skippedFiles.join(', ')}`
+      });
     }
 
     // Build OpenAI messages array

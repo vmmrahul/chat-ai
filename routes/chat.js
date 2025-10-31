@@ -166,42 +166,54 @@ router.post('/', upload.array('file'), async (req, res) => {
     // Build OpenAI messages array
     let messages = [...conversationHistory];
 
-    // Process file and build user message
-    if (file) {
-      if (isImageFile(file.originalname)) {
-        // Image file - use vision API
-        const imageDataUrl = await processImage(uploadedFilePath, file.originalname);
+    // Process files and build user message
+    if (validatedFiles.length > 0) {
+      // Separate files into images and documents
+      const imageFiles = validatedFiles.filter(f => isImageFile(f.originalname));
+      const documentFiles = validatedFiles.filter(f => isDocumentFile(f.originalname));
 
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: message || 'What do you see in this image?' },
-            { type: 'image_url', image_url: { url: imageDataUrl } }
-          ]
-        });
-      } else if (isDocumentFile(file.originalname)) {
-        // Document file - extract text
-        let extractedText = '';
-        const ext = path.extname(file.originalname).toLowerCase();
+      // Create composite message content
+      const content = [];
 
-        if (ext === '.pdf') {
-          extractedText = await processPDF(uploadedFilePath);
-        } else if (ext === '.docx') {
-          extractedText = await processDOCX(uploadedFilePath);
-        } else if (ext === '.txt') {
-          extractedText = processTXT(uploadedFilePath);
+      // Add user message text
+      if (message) {
+        content.push({ type: 'text', text: message });
+      } else if (validatedFiles.length > 0) {
+        content.push({ type: 'text', text: 'Please analyze these files:' });
+      }
+
+      // Process all image files
+      for (const imageFile of imageFiles) {
+        const imageDataUrl = await processImage(imageFile.path, imageFile.originalname);
+        content.push({ type: 'image_url', image_url: { url: imageDataUrl } });
+      }
+
+      // Process all document files
+      if (documentFiles.length > 0) {
+        let allDocText = 'Document content:\n';
+
+        for (const docFile of documentFiles) {
+          let extractedText = '';
+          const ext = path.extname(docFile.originalname).toLowerCase();
+
+          if (ext === '.pdf') {
+            extractedText = await processPDF(docFile.path);
+          } else if (ext === '.docx') {
+            extractedText = await processDOCX(docFile.path);
+          } else if (ext === '.txt') {
+            extractedText = processTXT(docFile.path);
+          }
+
+          allDocText += `${docFile.originalname}: ${extractedText}\n`;
         }
 
-        // Combine message with document content
-        const userContent = message
-          ? `${message}\n\nDocument content:\n${extractedText}`
-          : `Please analyze this document:\n\n${extractedText}`;
-
-        messages.push({
-          role: 'user',
-          content: userContent
-        });
+        content.push({ type: 'text', text: allDocText });
       }
+
+      messages.push({
+        role: 'user',
+        content: content
+      });
     } else {
       // Text-only message
       messages.push({

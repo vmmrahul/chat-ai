@@ -68,6 +68,25 @@ function setupEventListeners() {
   fileInput.addEventListener('change', handleFileSelection);
   clearFilesBtn.addEventListener('click', handleClearAllFiles);
   clearHistoryBtn.addEventListener('click', handleClearHistory);
+
+  // Export button click
+  exportBtn.addEventListener('click', openExportModal);
+
+  // Format button clicks (Step 1)
+  formatButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const format = btn.getAttribute('data-format');
+      showNameCustomizationStep(format);
+    });
+  });
+
+  // Modal navigation buttons
+  modalCancelBtn.addEventListener('click', closeExportModal);
+  backToFormatsBtn.addEventListener('click', backToFormatSelection);
+  confirmExportBtn.addEventListener('click', confirmExport);
+
+  // Filename input - real-time preview update
+  customFileName.addEventListener('input', updateFilenamePreview);
 }
 
 // Load conversation history from localStorage

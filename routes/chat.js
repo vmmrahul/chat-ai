@@ -7,6 +7,11 @@ const path = require('path');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 
+// Export libraries
+const PDFDocument = require('pdfkit');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
+const ExcelJS = require('exceljs');
+
 // Configure OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -318,6 +323,323 @@ router.post('/', upload.array('file'), async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'An error occurred processing your request'
+    });
+  }
+});
+
+// ===== EXPORT FUNCTIONALITY =====
+
+// Helper function to format date to human-readable format
+function formatHumanReadableDate(date) {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const month = months[date.getMonth()];
+  const day = date.getDate();
+  const year = date.getFullYear();
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+
+  hours = hours % 12;
+  hours = hours ? hours : 12; // Convert 0 to 12
+
+  return `${month} ${day}, ${year} at ${hours}:${minutes} ${ampm}`;
+}
+
+// Helper function to sanitize filename
+function sanitizeFilename(filename) {
+  return filename.replace(/[/\\:*?"<>|]/g, '').trim();
+}
+
+// Helper function to generate timestamp
+function generateTimestamp() {
+  return new Date().toISOString().replace(/:/g, '').replace(/\..+/, '').replace('T', '-');
+}
+
+// Generate PDF
+function generatePDF(messages) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument();
+      const chunks = [];
+
+      // Collect data chunks
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Add title
+      doc.fontSize(20).font('Helvetica-Bold').text('Chat Conversation Export', { align: 'center' });
+      doc.moveDown(0.5);
+
+      // Add export date
+      doc.fontSize(12).font('Helvetica').text(`Exported: ${formatHumanReadableDate(new Date())}`, { align: 'center' });
+      doc.moveDown(1);
+
+      // Add each message
+      messages.forEach((msg, index) => {
+        const timestamp = msg.timestamp ? new Date(msg.timestamp) : null;
+        const dateStr = timestamp ? formatHumanReadableDate(timestamp) : 'Unknown date';
+        const role = msg.role === 'user' ? 'User' : 'Assistant';
+
+        // Add timestamp and role (bold)
+        doc.fontSize(12).font('Helvetica-Bold').text(`${dateStr} - ${role}:`);
+        doc.moveDown(0.3);
+
+        // Add content (normal)
+        doc.fontSize(11).font('Helvetica').text(msg.content || '', { align: 'left' });
+        doc.moveDown(0.3);
+
+        // Add attached files if any
+        if (msg.fileNames && msg.fileNames.length > 0) {
+          doc.fontSize(10).font('Helvetica-Oblique').text(`Attached files: ${msg.fileNames.join(', ')}`);
+          doc.moveDown(0.3);
+        }
+
+        // Add space between messages
+        doc.moveDown(0.5);
+
+        // Add page break if needed (avoid breaking in middle of message)
+        if (doc.y > 700) {
+          doc.addPage();
+        }
+      });
+
+      // Add footer
+      doc.fontSize(11).font('Helvetica').text(`Total messages: ${messages.length}`, { align: 'center' });
+
+      // Finalize PDF
+      doc.end();
+
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// Generate DOCX
+async function generateDOCX(messages) {
+  try {
+    const sections = [];
+
+    // Add title
+    sections.push(
+      new Paragraph({
+        text: 'Chat Conversation Export',
+        heading: HeadingLevel.HEADING_1,
+        alignment: 'center'
+      })
+    );
+
+    // Add export date
+    sections.push(
+      new Paragraph({
+        text: `Exported: ${formatHumanReadableDate(new Date())}`,
+        alignment: 'center'
+      })
+    );
+
+    // Add blank line
+    sections.push(new Paragraph({ text: '' }));
+
+    // Add each message
+    messages.forEach(msg => {
+      const timestamp = msg.timestamp ? new Date(msg.timestamp) : null;
+      const dateStr = timestamp ? formatHumanReadableDate(timestamp) : 'Unknown date';
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+
+      // Add timestamp and role (bold, heading 2)
+      sections.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `${dateStr} - ${role}:`,
+              bold: true
+            })
+          ],
+          heading: HeadingLevel.HEADING_2
+        })
+      );
+
+      // Add content
+      sections.push(
+        new Paragraph({
+          text: msg.content || ''
+        })
+      );
+
+      // Add attached files if any
+      if (msg.fileNames && msg.fileNames.length > 0) {
+        sections.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `Attached files: ${msg.fileNames.join(', ')}`,
+                italics: true
+              })
+            ]
+          })
+        );
+      }
+
+      // Add blank line
+      sections.push(new Paragraph({ text: '' }));
+    });
+
+    // Add footer
+    sections.push(
+      new Paragraph({
+        text: `Total messages: ${messages.length}`,
+        alignment: 'center'
+      })
+    );
+
+    // Create document
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: sections
+      }]
+    });
+
+    // Generate buffer
+    const buffer = await Packer.toBuffer(doc);
+    return buffer;
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Generate Excel
+async function generateExcel(messages) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Chat Export');
+
+    // Set up columns
+    worksheet.columns = [
+      { header: 'Timestamp', key: 'timestamp', width: 30 },
+      { header: 'Role', key: 'role', width: 15 },
+      { header: 'Message', key: 'message', width: 60 },
+      { header: 'Attached Files', key: 'attachedFiles', width: 30 }
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+
+    // Add messages
+    messages.forEach(msg => {
+      const timestamp = msg.timestamp ? new Date(msg.timestamp) : null;
+      const dateStr = timestamp ? formatHumanReadableDate(timestamp) : 'Unknown date';
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      const attachedFiles = (msg.fileNames && msg.fileNames.length > 0) ? msg.fileNames.join(', ') : '';
+
+      worksheet.addRow({
+        timestamp: dateStr,
+        role: role,
+        message: msg.content || '',
+        attachedFiles: attachedFiles
+      });
+    });
+
+    // Enable text wrapping for Message column
+    worksheet.getColumn('message').alignment = { wrapText: true, vertical: 'top' };
+
+    // Freeze header row
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer;
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+// POST /api/export - Export conversation endpoint
+router.post('/export', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    // Validate request body
+    const { messages, format, filename } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid messages data'
+      });
+    }
+
+    if (!format || !['pdf', 'docx', 'xlsx'].includes(format)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid format. Must be one of: pdf, docx, xlsx'
+      });
+    }
+
+    if (typeof filename !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid filename'
+      });
+    }
+
+    // Sanitize filename
+    let sanitizedFilename = sanitizeFilename(filename);
+    if (!sanitizedFilename) {
+      sanitizedFilename = 'chat-export';
+    }
+
+    // Generate timestamp
+    const timestamp = generateTimestamp();
+
+    // Get file extension
+    const extensions = {
+      pdf: 'pdf',
+      docx: 'docx',
+      xlsx: 'xlsx'
+    };
+    const extension = extensions[format];
+
+    // Generate full filename
+    const fullFilename = `${sanitizedFilename}-${timestamp}.${extension}`;
+
+    // Generate file based on format
+    let buffer;
+    let contentType;
+
+    if (format === 'pdf') {
+      buffer = await generatePDF(messages);
+      contentType = 'application/pdf';
+    } else if (format === 'docx') {
+      buffer = await generateDOCX(messages);
+      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (format === 'xlsx') {
+      buffer = await generateExcel(messages);
+      contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+
+    // Set headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fullFilename}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    // Send file
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Export error:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate export file'
     });
   }
 });

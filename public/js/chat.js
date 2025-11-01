@@ -31,6 +31,7 @@ const formatButtons = document.querySelectorAll('.format-btn');
 let conversationHistory = [];
 let selectedFiles = [];
 let isSending = false;
+let selectedExportFormat = null;
 
 // Constants
 const STORAGE_KEY = 'chatHistory';

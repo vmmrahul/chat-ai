@@ -14,6 +14,19 @@ const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const errorMessage = document.getElementById('errorMessage');
 
+// Export Modal Elements
+const exportBtn = document.getElementById('exportBtn');
+const exportModal = document.getElementById('exportModal');
+const formatSelectionStep = document.getElementById('formatSelectionStep');
+const nameCustomizationStep = document.getElementById('nameCustomizationStep');
+const nameStepTitle = document.getElementById('nameStepTitle');
+const customFileName = document.getElementById('customFileName');
+const filenamePreview = document.getElementById('filenamePreview');
+const modalCancelBtn = document.getElementById('modalCancelBtn');
+const backToFormatsBtn = document.getElementById('backToFormatsBtn');
+const confirmExportBtn = document.getElementById('confirmExportBtn');
+const formatButtons = document.querySelectorAll('.format-btn');
+
 // State
 let conversationHistory = [];
 let selectedFiles = [];

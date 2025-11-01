@@ -463,6 +463,390 @@ function isLocalStorageAvailable() {
   }
 }
 
+// ===== EXPORT FUNCTIONALITY =====
+
+// Open export modal
+function openExportModal() {
+  // Check if there's any conversation history
+  const history = localStorage.getItem(STORAGE_KEY);
+  if (!history || JSON.parse(history).length === 0) {
+    showError('No conversation to export. Start chatting to create history.');
+    return;
+  }
+
+  // Show modal
+  exportModal.style.display = 'flex';
+
+  // Ensure Step 1 is visible, Step 2 is hidden
+  formatSelectionStep.style.display = 'block';
+  nameCustomizationStep.style.display = 'none';
+
+  // Reset custom filename to default
+  customFileName.value = 'chat-export';
+  selectedExportFormat = null;
+
+  // Add overlay click listener
+  exportModal.addEventListener('click', handleOverlayClick);
+
+  // Add escape key listener
+  document.addEventListener('keydown', handleEscapeKey);
+}
+
+// Close export modal
+function closeExportModal() {
+  exportModal.style.display = 'none';
+
+  // Reset to Step 1
+  formatSelectionStep.style.display = 'block';
+  nameCustomizationStep.style.display = 'none';
+
+  // Clear selected format
+  selectedExportFormat = null;
+
+  // Remove event listeners
+  exportModal.removeEventListener('click', handleOverlayClick);
+  document.removeEventListener('keydown', handleEscapeKey);
+}
+
+// Handle overlay click (close on outside click)
+function handleOverlayClick(e) {
+  if (e.target === exportModal) {
+    closeExportModal();
+  }
+}
+
+// Handle escape key press
+function handleEscapeKey(e) {
+  if (e.key === 'Escape') {
+    closeExportModal();
+  }
+}
+
+// Show name customization step
+function showNameCustomizationStep(format) {
+  // Store selected format
+  selectedExportFormat = format;
+
+  // Hide Step 1, Show Step 2
+  formatSelectionStep.style.display = 'none';
+  nameCustomizationStep.style.display = 'block';
+
+  // Update modal title based on format
+  const formatTitles = {
+    json: 'Export as JSON',
+    markdown: 'Export as Markdown',
+    txt: 'Export as Plain Text',
+    pdf: 'Export as PDF',
+    docx: 'Export as Word',
+    xlsx: 'Export as Excel'
+  };
+  nameStepTitle.textContent = formatTitles[format] || 'Export';
+
+  // Set focus to filename input
+  customFileName.focus();
+  customFileName.select();
+
+  // Update preview
+  updateFilenamePreview();
+}
+
+// Back to format selection
+function backToFormatSelection() {
+  // Hide Step 2, Show Step 1
+  nameCustomizationStep.style.display = 'none';
+  formatSelectionStep.style.display = 'block';
+
+  // Clear selected format
+  selectedExportFormat = null;
+}
+
+// Confirm export
+function confirmExport() {
+  // Get custom filename and sanitize
+  let baseName = customFileName.value.trim();
+  baseName = sanitizeFilename(baseName);
+
+  // If empty after sanitization, use default
+  if (!baseName) {
+    baseName = 'chat-export';
+  }
+
+  // Call export function with format and custom filename
+  exportConversation(selectedExportFormat, baseName);
+}
+
+// Sanitize filename (remove invalid characters)
+function sanitizeFilename(filename) {
+  // Remove invalid filename characters: / \ : * ? " < > |
+  return filename.replace(/[/\\:*?"<>|]/g, '').trim();
+}
+
+// Generate filename with timestamp
+function generateFilename(baseName, format) {
+  // Generate timestamp in format YYYY-MM-DD-HHMMSS
+  const timestamp = new Date().toISOString().replace(/:/g, '').replace(/\..+/, '').replace('T', '-');
+
+  // Get extension based on format
+  const extensions = {
+    json: 'json',
+    markdown: 'md',
+    txt: 'txt',
+    pdf: 'pdf',
+    docx: 'docx',
+    xlsx: 'xlsx'
+  };
+
+  const extension = extensions[format] || 'txt';
+
+  return `${baseName}-${timestamp}.${extension}`;
+}
+
+// Update filename preview in real-time
+function updateFilenamePreview() {
+  let baseName = customFileName.value.trim();
+  baseName = sanitizeFilename(baseName);
+
+  // If empty, use default
+  if (!baseName) {
+    baseName = 'chat-export';
+  }
+
+  // Truncate if too long (>200 characters)
+  if (baseName.length > 200) {
+    baseName = baseName.substring(0, 200);
+  }
+
+  // Generate full filename preview
+  const fullFilename = generateFilename(baseName, selectedExportFormat);
+
+  // Update preview text
+  filenamePreview.textContent = `Will be saved as: ${fullFilename}`;
+}
+
+// Export conversation
+function exportConversation(format, customFilename) {
+  // Get conversation history
+  const history = localStorage.getItem(STORAGE_KEY);
+  if (!history) {
+    showError('No conversation to export');
+    return;
+  }
+
+  const chatHistory = JSON.parse(history);
+
+  // Generate full filename
+  const fullFilename = generateFilename(customFilename, format);
+
+  // Based on format, either generate client-side or call backend
+  if (format === 'json') {
+    const content = generateJSON(chatHistory);
+    downloadFile(content, fullFilename, 'application/json');
+    closeExportModal();
+  } else if (format === 'markdown') {
+    const content = generateMarkdown(chatHistory);
+    downloadFile(content, fullFilename, 'text/markdown');
+    closeExportModal();
+  } else if (format === 'txt') {
+    const content = generatePlainText(chatHistory);
+    downloadFile(content, fullFilename, 'text/plain');
+    closeExportModal();
+  } else if (format === 'pdf' || format === 'docx' || format === 'xlsx') {
+    // Call backend for server-side generation
+    exportViaBackend(format, customFilename);
+  }
+}
+
+// Generate JSON export
+function generateJSON(chatHistory) {
+  const exportData = {
+    exportDate: new Date().toISOString(),
+    messages: chatHistory,
+    messageCount: chatHistory.length
+  };
+
+  return JSON.stringify(exportData, null, 2);
+}
+
+// Generate Markdown export
+function generateMarkdown(chatHistory) {
+  let markdown = '# Chat Conversation\n\n';
+
+  // Add export timestamp
+  const exportDate = new Date();
+  markdown += `**Exported:** ${formatHumanReadableDate(exportDate)}\n\n`;
+
+  // Add separator
+  markdown += '---\n\n';
+
+  // Add each message
+  chatHistory.forEach(msg => {
+    const timestamp = msg.timestamp ? new Date(msg.timestamp) : null;
+    const dateStr = timestamp ? formatHumanReadableDate(timestamp) : 'Unknown date';
+
+    markdown += `## ${dateStr}\n`;
+    markdown += `**${msg.role === 'user' ? 'User' : 'Assistant'}:**\n\n`;
+    markdown += `${msg.content}\n\n`;
+
+    // Add attached files if any
+    if (msg.fileNames && msg.fileNames.length > 0) {
+      markdown += `> Attached files: ${msg.fileNames.join(', ')}\n\n`;
+    }
+  });
+
+  // Add footer
+  markdown += `---\n\n`;
+  markdown += `*Total messages: ${chatHistory.length}*\n`;
+
+  return markdown;
+}
+
+// Generate Plain Text export
+function generatePlainText(chatHistory) {
+  let text = 'Chat Conversation Export\n';
+
+  // Add export timestamp
+  const exportDate = new Date();
+  text += `Exported: ${formatHumanReadableDate(exportDate)}\n`;
+
+  // Add separator
+  text += '---\n\n';
+
+  // Add each message
+  chatHistory.forEach(msg => {
+    const timestamp = msg.timestamp ? new Date(msg.timestamp) : null;
+    const dateStr = timestamp ? formatHumanReadableDate(timestamp) : 'Unknown date';
+
+    text += `[${dateStr}] ${msg.role === 'user' ? 'User' : 'Assistant'}:\n`;
+    text += `${msg.content}\n`;
+
+    // Add attached files if any
+    if (msg.fileNames && msg.fileNames.length > 0) {
+      text += `[Attached files: ${msg.fileNames.join(', ')}]\n`;
+    }
+
+    text += '\n';
+  });
+
+  // Add footer
+  text += `---\n`;
+  text += `Total messages: ${chatHistory.length}\n`;
+
+  return text;
+}
+
+// Format date to human-readable format
+function formatHumanReadableDate(date) {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const month = months[date.getMonth()];
+  const day = date.getDate();
+  const year = date.getFullYear();
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+
+  hours = hours % 12;
+  hours = hours ? hours : 12; // Convert 0 to 12
+
+  return `${month} ${day}, ${year} at ${hours}:${minutes} ${ampm}`;
+}
+
+// Download file (client-side)
+function downloadFile(content, filename, mimeType) {
+  // Create Blob
+  const blob = new Blob([content], { type: mimeType });
+
+  // Create temporary anchor element
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+
+  // Append to body, click, and remove
+  document.body.appendChild(a);
+  a.click();
+
+  // Clean up
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+// Export via backend (for PDF, DOCX, Excel)
+async function exportViaBackend(format, customFilename) {
+  // Get chat history
+  const chatHistory = JSON.parse(localStorage.getItem(STORAGE_KEY));
+
+  // Disable Download button and show loading state
+  confirmExportBtn.disabled = true;
+  const originalText = confirmExportBtn.textContent;
+  confirmExportBtn.textContent = 'Generating...';
+
+  try {
+    // Send request to backend
+    const response = await fetch('/api/export', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messages: chatHistory,
+        format: format,
+        filename: customFilename
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    // Get blob from response
+    const blob = await response.blob();
+
+    // Extract filename from Content-Disposition header if available
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = generateFilename(customFilename, format);
+
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+
+    document.body.appendChild(a);
+    a.click();
+
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+
+    // Close modal on success
+    closeExportModal();
+
+  } catch (error) {
+    console.error('Export error:', error);
+    showError('Export failed. Please try again.');
+  } finally {
+    // Re-enable Download button
+    confirmExportBtn.disabled = false;
+    confirmExportBtn.textContent = originalText;
+  }
+}
+
 // Show warning if localStorage not available
 if (!isLocalStorageAvailable()) {
   console.warn('localStorage not available. Chat history will not persist.');
